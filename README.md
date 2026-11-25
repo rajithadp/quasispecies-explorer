@@ -1,6 +1,7 @@
 # Quasispecies Explorer
 
-A lightweight, interactive tool for quantifying and visualizing viral quasispecies diversity from aligned haplotype FASTA files.
+A lightweight, interactive tool for quantifying and visualizing viral quasispecies diversity from aligned haplotype FASTA files.This tool takes raw FASTQ reads, maps them to a reference genome, trims primers, calls variants using iVar, and reconstructs haplotypes. It includes a fallback algorithm to handle highly diverse quasispecies samples that standard haplotype reconstructors struggle with.
+
 
 ## Features
 *   **Population Metrics:** Calculates the total number of unique haplotypes, mean Shannon entropy, and nucleotide diversity (π).
