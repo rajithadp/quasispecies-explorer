@@ -48,7 +48,14 @@ if uploaded_fasta is not None:
     for i in range(seq_length):
         column = [seq[i] for seq in sequences]
         counts = pd.Series(column).value_counts(normalize=True)
-        entropies.append(entropy(counts, base=2))
+        
+        # --- ADD THIS FILTER ---
+        # Only calculate entropy if the variant is > 5% frequency
+        if len(counts) > 1 and counts.iloc[1] < 0.05:
+            entropies.append(0)
+        else:
+            entropies.append(entropy(counts, base=2))
+        # -----------------------
         
         sum_sq = sum(p**2 for p in counts)
         pi = (total_reads / (total_reads - 1)) * (1 - sum_sq) if total_reads > 1 else 0
@@ -80,39 +87,43 @@ if uploaded_fasta is not None:
         st.plotly_chart(fig_entropy, use_container_width=True)
 
     with tab2:
-        st.subheader("Haplotype Paths (Bubbles = Variants)")
+        st.subheader("Haplotype Paths (Top 10 Hotspots)")
         fig_graph = go.Figure()
         
-        # We will draw the backbone
+        # 1. Draw the consensus backbone
         fig_graph.add_trace(go.Scatter(x=[1, seq_length], y=[0, 0], mode='lines', 
                                        name='Consensus Backbone', line=dict(color='black', width=3)))
         
-        # Draw variant paths (colored by frequency)
-        colors = px.colors.sequential.Viridis
-        variant_positions = [i for i, e in enumerate(entropies) if e > 0.1] # Only major hotspots
+        # 2. Find the top 10 hotspots
+        top_indices = np.argsort(entropies)[-10:] # Get indices of top 10 highest entropy
+        top_indices = sorted(top_indices) # Sort them by position
         
-        for i, pos in enumerate(variant_positions):
-            # Find the variant allele
-            column = [seq[pos] for seq in sequences]
+        colors = px.colors.sequential.Viridis
+        
+        for i, pos_idx in enumerate(top_indices):
+            pos = pos_idx + 1
+            column = [seq[pos_idx] for seq in sequences]
             ref_allele = column[0]
-            var_allele = pd.Series(column).value_counts().index[1]
             
-            # Get frequency
-            freq = pd.Series(column).value_counts(normalize=True)[var_allele]
-            color = colors[int(freq * 10) if int(freq*10) < len(colors) else -1]
-            
-            # Draw the bubble
-            fig_graph.add_trace(go.Scatter(
-                x=[pos, pos, pos], 
-                y=[0, 1, 0], 
-                mode='lines+markers', 
-                name=f"{ref_allele}->{var_allele} at {pos} ({freq:.1%})",
-                line=dict(color=color, width=2),
-                marker=dict(size=10, color=color),
-                hoverinfo='name'
-            ))
-            
-        fig_graph.update_layout(title="Variation Graph (Colored by Frequency)",
+            # Find the most common variant allele
+            counts = pd.Series(column).value_counts()
+            if len(counts) > 1:
+                var_allele = counts.index[1]
+                freq = counts.iloc[1] / len(sequences)
+                color = colors[int(freq * 10) if int(freq*10) < len(colors) else -1]
+                
+                # Draw the bubble
+                fig_graph.add_trace(go.Scatter(
+                    x=[pos, pos, pos], 
+                    y=[0, 1, 0], 
+                    mode='lines+markers', 
+                    name=f"{ref_allele}->{var_allele} at {pos} ({freq:.1%})",
+                    line=dict(color=color, width=2),
+                    marker=dict(size=10, color=color),
+                    hoverinfo='name'
+                ))
+                
+        fig_graph.update_layout(title="Variation Graph (Top 10 Mutational Hotspots)",
                                 xaxis_title="Genomic Position", 
                                 yaxis_title="Bubble Level",
                                 height=400)
@@ -122,7 +133,6 @@ if uploaded_fasta is not None:
         st.subheader("Quasispecies vs. Environmental Metadata")
         if meta_df is not None:
             # Merge metrics with metadata
-            # We need per-haplotype diversity, so we'll calculate a simple proxy: sequence divergence from consensus
             consensus = "".join([pd.Series([seq[i] for seq in sequences]).mode()[0] for i in range(seq_length)])
             
             hap_metrics = []
@@ -133,7 +143,6 @@ if uploaded_fasta is not None:
             df_hap_metrics = pd.DataFrame(hap_metrics)
             merged_df = pd.merge(df_hap_metrics, meta_df, on="HaplotypeID")
             
-            # Plot: Temperature vs Mutations
             fig_scatter = px.box(merged_df, x="Temperature_C", y="Mutations_vs_Consensus", 
                                  color="Host", points="all",
                                  title="Mutations per Haplotype vs. Temperature & Host",
@@ -142,3 +151,5 @@ if uploaded_fasta is not None:
             st.dataframe(merged_df.head(10), use_container_width=True)
         else:
             st.info("Upload a metadata CSV in the sidebar to see correlations.")
+else:
+    st.info("👈 Please upload a FASTA file in the sidebar to begin.")
