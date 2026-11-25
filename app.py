@@ -10,70 +10,68 @@ import io
 st.set_page_config(page_title="Quasispecies Explorer", layout="wide")
 
 st.title("🧬 Quasispecies Explorer")
-st.markdown("Upload an aligned FASTA file of viral haplotypes to calculate diversity metrics and visualize the variation graph.")
+st.markdown("Upload aligned FASTA haplotypes and optional metadata to quantify and visualize viral diversity.")
 
 # --- SIDEBAR ---
-st.sidebar.header("Data Input")
-uploaded_file = st.sidebar.file_uploader("Upload FASTA file", type=["fasta", "fa", "fna"])
+st.sidebar.header("1. Data Input")
+uploaded_fasta = st.sidebar.file_uploader("Upload Haplotype FASTA", type=["fasta", "fa", "fna"])
+uploaded_meta = st.sidebar.file_uploader("Upload Metadata (CSV) - Optional", type=["csv"])
 
-if uploaded_file is not None:
-    # 1. Parse the FASTA
-    fasta_io = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
+if uploaded_fasta is not None:
+    # 1. Parse FASTA
+    fasta_io = io.StringIO(uploaded_fasta.getvalue().decode("utf-8"))
     records = list(SeqIO.parse(fasta_io, "fasta"))
-    
-    if len(records) == 0:
-        st.error("No sequences found in the FASTA file.")
-        st.stop()
-        
     sequences = [str(rec.seq) for rec in records]
+    hap_ids = [rec.id for rec in records]
     seq_length = len(sequences[0])
     
-    # Ensure all sequences are aligned (same length)
-    if not all(len(s) == seq_length for s in sequences):
-        st.error("Sequences are not aligned (they have different lengths). Please provide an MSA.")
-        st.stop()
+    # 2. Parse Metadata (if provided)
+    meta_df = None
+    if uploaded_meta is not None:
+        meta_df = pd.read_csv(uploaded_meta)
 
-    # 2. Calculate Metrics
+    # 3. Calculate Metrics
     num_haplotypes = len(set(sequences))
     total_reads = len(sequences)
     
-    # Per-site Shannon Entropy & Nucleotide Diversity
-    entropies = []
-    pi_values = []
+    # Haplotype Frequencies
+    hap_counts = pd.Series(sequences).value_counts()
+    hap_freqs = hap_counts / total_reads
     
+    # Rare Haplotype Load (RHL) - Fraction of haplotypes at < 5% frequency
+    rht_threshold = 0.05
+    rare_haplotypes = hap_freqs[hap_freqs < rht_threshold]
+    rhl = rare_haplotypes.sum()
+    
+    # Per-site Entropy & Nucleotide Diversity
+    entropies, pi_values = [], []
     for i in range(seq_length):
         column = [seq[i] for seq in sequences]
-        # Entropy
         counts = pd.Series(column).value_counts(normalize=True)
         entropies.append(entropy(counts, base=2))
         
-        # Nucleotide Diversity (Pi) at this site
-        # Pi = (n / (n-1)) * (1 - sum(p_i^2))
-        if total_reads > 1:
-            sum_sq = sum(p**2 for p in counts)
-            pi = (total_reads / (total_reads - 1)) * (1 - sum_sq)
-            pi_values.append(pi)
-        else:
-            pi_values.append(0)
+        sum_sq = sum(p**2 for p in counts)
+        pi = (total_reads / (total_reads - 1)) * (1 - sum_sq) if total_reads > 1 else 0
+        pi_values.append(pi)
 
     mean_entropy = np.mean(entropies)
     mean_pi = np.mean(pi_values)
 
     # --- DISPLAY METRICS ---
     st.header("📊 Population Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Haplotypes", num_haplotypes)
-    col2.metric("Total Sequences", total_reads)
-    col3.metric("Mean Shannon Entropy", f"{mean_entropy:.3f} bits")
-    col4.metric("Nucleotide Diversity (π)", f"{mean_pi:.5f}")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total Haplotypes", num_haplotypes)
+    c2.metric("Total Sequences", total_reads)
+    c3.metric("Mean Shannon Entropy", f"{mean_entropy:.3f} bits")
+    c4.metric("Nucleotide Diversity (π)", f"{mean_pi:.5f}")
+    c5.metric(f"Rare Haplotype Load (<{rht_threshold*100}%)", f"{rhl:.2%}")
 
     st.divider()
 
     # --- VISUALIZATIONS ---
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.subheader("🔥 Mutational Hotspots (Entropy)")
+    tab1, tab2, tab3 = st.tabs(["🔥 Entropy & Hotspots", "🕸️ Variation Graph", "🌡️ Metadata Correlation"])
+    
+    with tab1:
         df_entropy = pd.DataFrame({"Position": range(1, seq_length + 1), "Entropy": entropies})
         fig_entropy = px.line(df_entropy, x="Position", y="Entropy", 
                               title="Shannon Entropy Across Genome",
@@ -81,44 +79,66 @@ if uploaded_file is not None:
         fig_entropy.update_traces(line_color='#e74c3c', fill='tozeroy')
         st.plotly_chart(fig_entropy, use_container_width=True)
 
-    with col_right:
-        st.subheader("🕸️ Variation Graph")
-        # A simplified variation graph builder
-        # We look at columns with entropy > 0, these are our "bubbles"
-        variant_positions = [i for i, e in enumerate(entropies) if e > 0]
-        
+    with tab2:
+        st.subheader("Haplotype Paths (Bubbles = Variants)")
         fig_graph = go.Figure()
         
-        # Draw paths for each unique haplotype
-        unique_seqs = list(set(sequences))
-        colors = px.colors.qualitative.Plotly
+        # We will draw the backbone
+        fig_graph.add_trace(go.Scatter(x=[1, seq_length], y=[0, 0], mode='lines', 
+                                       name='Consensus Backbone', line=dict(color='black', width=3)))
         
-        for idx, seq in enumerate(unique_seqs):
-            color = colors[idx % len(colors)]
-            # Draw the "backbone" (y=0 for reference base, y=1 for variant base)
-            # To make it look like a graph, we draw horizontal lines and vertical jumps
-            x_vals = []
-            y_vals = []
+        # Draw variant paths (colored by frequency)
+        colors = px.colors.sequential.Viridis
+        variant_positions = [i for i, e in enumerate(entropies) if e > 0.1] # Only major hotspots
+        
+        for i, pos in enumerate(variant_positions):
+            # Find the variant allele
+            column = [seq[pos] for seq in sequences]
+            ref_allele = column[0]
+            var_allele = pd.Series(column).value_counts().index[1]
             
-            ref_seq = sequences[0]
+            # Get frequency
+            freq = pd.Series(column).value_counts(normalize=True)[var_allele]
+            color = colors[int(freq * 10) if int(freq*10) < len(colors) else -1]
             
-            for i in range(seq_length):
-                x_vals.append(i + 1)
-                if seq[i] == ref_seq[i]:
-                    y_vals.append(0 + (idx * 0.1)) # Baseline for backbone
-                else:
-                    y_vals.append(1 + (idx * 0.1)) # Branch up for variant
-                    
-            fig_graph.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', 
-                                           name=f"Haplotype {idx+1}",
-                                           line=dict(color=color, width=2, shape='hv')))
+            # Draw the bubble
+            fig_graph.add_trace(go.Scatter(
+                x=[pos, pos, pos], 
+                y=[0, 1, 0], 
+                mode='lines+markers', 
+                name=f"{ref_allele}->{var_allele} at {pos} ({freq:.1%})",
+                line=dict(color=color, width=2),
+                marker=dict(size=10, color=color),
+                hoverinfo='name'
+            ))
             
-        fig_graph.update_layout(title="Haplotype Paths (Bubbles = Variants)",
+        fig_graph.update_layout(title="Variation Graph (Colored by Frequency)",
                                 xaxis_title="Genomic Position", 
-                                yaxis_title="Graph Node Level",
-                                showlegend=True,
+                                yaxis_title="Bubble Level",
                                 height=400)
         st.plotly_chart(fig_graph, use_container_width=True)
 
-else:
-    st.info("👈 Please upload a FASTA file in the sidebar to begin. You can use the `simulated_haplotypes.fasta` generated in the previous step.")
+    with tab3:
+        st.subheader("Quasispecies vs. Environmental Metadata")
+        if meta_df is not None:
+            # Merge metrics with metadata
+            # We need per-haplotype diversity, so we'll calculate a simple proxy: sequence divergence from consensus
+            consensus = "".join([pd.Series([seq[i] for seq in sequences]).mode()[0] for i in range(seq_length)])
+            
+            hap_metrics = []
+            for seq, hap_id in zip(sequences, hap_ids):
+                diff = sum(1 for a, b in zip(seq, consensus) if a != b)
+                hap_metrics.append({"HaplotypeID": hap_id, "Mutations_vs_Consensus": diff})
+            
+            df_hap_metrics = pd.DataFrame(hap_metrics)
+            merged_df = pd.merge(df_hap_metrics, meta_df, on="HaplotypeID")
+            
+            # Plot: Temperature vs Mutations
+            fig_scatter = px.box(merged_df, x="Temperature_C", y="Mutations_vs_Consensus", 
+                                 color="Host", points="all",
+                                 title="Mutations per Haplotype vs. Temperature & Host",
+                                 labels={"Temperature_C": "Temperature (°C)", "Mutations_vs_Consensus": "Mutations vs Consensus"})
+            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.dataframe(merged_df.head(10), use_container_width=True)
+        else:
+            st.info("Upload a metadata CSV in the sidebar to see correlations.")
