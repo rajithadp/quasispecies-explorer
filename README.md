@@ -29,3 +29,52 @@ We recommend using a Conda environment to manage the bioinformatics dependencies
 ```bash
 conda create -n quasispecies -c bioconda -c conda-forge python=3.10 minimap2 samtools ivar cliquesnv biopython pandas numpy scipy streamlit plotly
 conda activate quasispecies
+```
+
+## ▶️ Usage
+
+1. **Run the Pipeline**
+To process raw FASTQ reads, you need the forward (R1) and reverse (R2) reads, and a reference genome.
+
+```bash
+python fastq_to_fasta.py \
+  --fastq1 raw_reads/SRR12447392_1.fastq \
+  --fastq2 raw_reads/SRR12447392_2.fastq \
+  --ref MN908947.3.fasta \
+  --out real_haplotypes.fasta
+```
+
+2. **Launch the Dashboard**
+Once the pipeline finishes and generates the real_haplotypes.fasta file, launch the web interface:
+
+```bash
+streamlit run app.py
+```
+
+Upload the generated FASTA file, and optionally upload a CSV containing metadata (columns must include HaplotypeID, Temperature_C, and Host) to see the correlation plots.
+
+## 🧪 Testing with Simulated Data
+
+If you want to test the tool without downloading large public datasets, use the built-in simulation scripts:
+
+```bash
+python simulate_data.py
+python app.py # or streamlit run app.py
+```
+
+Upload the generated simulated_haplotypes.fasta to see a controlled, simple quasispecies cloud.
+
+## 📊 Expected Outputs
+
+* **Haplotype Count:** The number of unique viral genomes in the population.
+* **Shannon Entropy:** The uncertainty (variation) at each genomic position. High spikes indicate mutational hotspots.
+* **Nucleotide Diversity (π):** The average number of pairwise differences per site across the population.
+* **Rare Haplotype Load (RHL):** The fraction of haplotypes below a 5% threshold, which is a strong marker of viral adaptability and mutagenic pressure.
+
+## 👤 Author
+
+Rajitha - [GitHub Profile](https://github.com/rajithadp)
+
+## 📄 License
+
+This project is licensed under the MIT License.
