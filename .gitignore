@@ -31,3 +31,6 @@ __pycache__/
 *.zip
 sequence.gff3
 *.fai
+readcheck*.fasta
+readcheck*.tsv
+readcheck*.txt
