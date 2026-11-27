@@ -1,0 +1,33 @@
+# data and run output: keep out of git
+raw_reads/
+samples/
+*.fastq
+*.fastq.gz
+*.bam
+*.bai
+*.sam
+*_work/
+cliquesnv_out/
+cs_test*/
+*.log
+*_log.txt
+run_log.txt
+*:Zone.Identifier
+*.Zone.Identifier
+# results from your own runs
+linkage*.tsv
+linkage*_report.txt
+compare.tsv
+compare.png
+annotated.*.tsv
+*.run_info.json
+*.variants.tsv
+!tests/data/*.tsv
+# python
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.venv/
+*.zip
+sequence.gff3
+*.fai

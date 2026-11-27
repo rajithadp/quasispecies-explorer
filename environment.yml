@@ -1,0 +1,17 @@
+name: quasispecies
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.10
+  - minimap2
+  - samtools
+  - ivar
+  - cliquesnv
+  - numpy
+  - pandas
+  - matplotlib
+  - networkx
+  - plotly
+  - streamlit
+  - pytest
