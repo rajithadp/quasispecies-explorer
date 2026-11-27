@@ -191,3 +191,63 @@ def gene_summary(table, cds_list: list[Cds]):
             "per_kb": (len(sub) / length * 1000) if length else float("nan"),
         })
     return pd.DataFrame(rows)
+
+
+# ---------- linked variants annotated as one haplotype ----------
+
+def annotate_haplotype(annotator: "Annotator", substitutions) -> list[dict]:
+    """Effect of several substitutions that sit on the SAME genome, one row per affected codon.
+
+    substitutions: iterable of (position, ref, alt) single-base changes. Changes that fall in one codon are applied
+    together. 'single_effects' lists what each change would do alone; 'emergent' is True when the joint amino acid
+    is not the amino acid any single change gives (the combination does something no member does). Changes in
+    noncoding sequence get one row each (gene empty). A base read in two codon contexts (a frameshift join) is
+    reported in both.
+    """
+    subs = [(int(p), r.upper(), a.upper()) for p, r, a in substitutions]
+    if len({p for p, _, _ in subs}) != len(subs):
+        raise ValueError("two substitutions at the same position cannot be on the same haplotype")
+    for p, r, a in subs:
+        if len(a) != 1 or a not in "ACGT":
+            raise ValueError(f"only single-base substitutions can be combined, got {p} {r}>{a}")
+        if p < 1 or p > len(annotator.ref):
+            raise ValueError(f"position {p} is outside the reference (length {len(annotator.ref)})")
+        if annotator.ref[p - 1] != r:
+            raise ValueError(f"reference mismatch at {p}: given {r}, reference FASTA has {annotator.ref[p - 1]}")
+
+    codons: dict = {}   # (cds_id, codon_start_index) -> (cds, [(pos, ref, alt, idx)])
+    rows: list[dict] = []
+    for p, r, a in subs:
+        hits = annotator._by_pos.get(p)
+        if not hits:
+            rows.append({**Annotator._row(None, None, "noncoding"), "positions": str(p), "single_effects": "noncoding",
+                         "emergent": False})
+            continue
+        for c, idx in hits:
+            codons.setdefault((c.cds_id, idx - idx % 3), (c, []))[1].append((p, r, a, idx))
+    for (_, start), (c, members) in codons.items():
+        coding = annotator._coding[c.cds_id]
+        codon_pos = coding[start:start + 3]
+        positions = ",".join(str(p) for p, _, _, _ in sorted(members))
+        if len(codon_pos) < 3:
+            rows.append({**Annotator._row(c, start, "incomplete_codon"), "positions": positions,
+                         "single_effects": "incomplete_codon", "emergent": False})
+            continue
+        change = {p: a for p, _, a, _ in members}
+        ref_codon = "".join(annotator._base(p, c.strand) for p in codon_pos)
+        alt_codon = "".join(annotator._base(p, c.strand, change.get(p)) for p in codon_pos)
+        if "N" in ref_codon or "N" in alt_codon:
+            rows.append({**Annotator._row(c, start, "unknown"), "positions": positions, "single_effects": "unknown",
+                         "emergent": False})
+            continue
+        ra, aa = CODON_TABLE[ref_codon], CODON_TABLE[alt_codon]
+        effect = ("synonymous" if ra == aa else "stop_gained" if aa == "*" else "stop_lost" if ra == "*" else "missense")
+        singles = []
+        for p, _, a, _ in sorted(members):
+            sc = "".join(annotator._base(q, c.strand, a if q == p else None) for q in codon_pos)
+            singles.append(f"{ra}{start // 3 + 1}{CODON_TABLE[sc]}")
+        single_aas = {s[-1] for s in singles}
+        rows.append({**Annotator._row(c, start, effect, ref_codon, alt_codon, ra, aa), "positions": positions,
+                     "single_effects": "; ".join(singles), "emergent": len(members) > 1 and aa not in single_aas})
+    rows.sort(key=lambda r: (int(r["positions"].split(",")[0])))
+    return rows

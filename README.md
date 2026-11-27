@@ -16,7 +16,7 @@ It goes beyond a consensus sequence: it maps reads, calls low-frequency variants
 | ARTIC SARS-CoV-2 primers always downloaded. | Trimming is optional: `--primers FILE`, or `--artic-v3` for SARS-CoV-2. |
 | CliqueSNV can fail and still exit normally (it prints a stack trace, writes a placeholder haplotype with frequency 1.0 and records `Runtime error` only in its JSON), so a failed run looked like a one-haplotype result. | The JSON is read; any error means the placeholder is **not used**, the reason is printed and stored in `run_info.json`, and CliqueSNV runs with `-log`. |
 | Only haplotype FASTA could be explored. | **Site-level mode**: upload the iVar variants table (`.tsv`) to see per-site minor-allele frequencies, the frequency spectrum and a π estimate when linked haplotypes are not available. |
-| No tests. | 132 tests. |
+| No tests. | 158 tests. |
 
 ## Pipeline
 
@@ -89,6 +89,17 @@ python annotate_sites.py --variants samples/*.variants.tsv --gff MN908947.3.gff3
 ```
 
 Labels every variant (frequency >= 2%, depth >= 100) with its gene, codon and amino-acid change (e.g. `S:D614G`) and its effect: synonymous, missense, stop gained/lost, or noncoding. Handles multi-segment CDS (SARS-CoV-2 orf1ab is read through a -1 ribosomal frameshift, so the shared base has two codon contexts) and minus-strand genes. A per-gene table counts the minor variants, also without G>T / C>A. The reference FASTA must be the one the reads were mapped to: a base mismatch stops the run. The coordinate handling was checked against published sites (S D614G, orf1ab P4715L, ORF3a Q57H). Counts are numbers of variants, not rates per available site, so they are not dN/dS; orf1ab codons count along the whole polyprotein, not nsp numbering. Only the CDS features of the GFF3 are used.
+
+Linked variants (from `linkage_check.py`) can be annotated **as one haplotype** with `annotate_haplotype.py --variants X.variants.tsv --gff MN908947.3.gff3 --ref MN908947.3.fasta --sites 26042,26044,26046`: changes in the same codon are applied together, and the joint amino-acid change is shown next to what each change would do alone (flagged *emergent* when the combination gives an amino acid no single change gives). It assumes the variants really are on one genome and does not check that.
+
+### Do the reads behind a linked cluster look like normal reads? (`read_check.py`)
+
+```bash
+python read_check.py --alignment SRR12447392_work/trimmed.sam --variants SRR12447392.variants.tsv \
+    --ref MN908947.3.fasta --sites 26042,26044,26046 --sites 5743,5744 --out readcheck
+```
+
+Linked minor variants can be real, or they can be reads from another source that map badly. Such reads usually carry extra mismatches elsewhere and more soft-clipping. For each group, reads that show the alternative allele at every site they cover (*alt*) are compared with reads showing the reference allele (*ref*) over the same sites: unexplained mismatches (outside the group sites and the fixed differences), soft-clipped bases, mapping quality, indels and strand. Flags are raised for at least one extra mismatch per read, a 25-point higher share of reads with 10+ soft-clipped bases, or 10 points lower mapping quality (heuristic thresholds). The alt reads are also written as FASTA (in the reference's orientation) for NCBI BLAST. A clean result does not rule out a PCR or library artifact, and with a handful of alt reads the comparison is descriptive.
 
 The command line summary also works without the dashboard:
 

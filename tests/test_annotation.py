@@ -1,6 +1,6 @@
 import pytest
 
-from quasigraph.annotation import CODON_TABLE, Annotator, Cds, parse_gff
+from quasigraph.annotation import CODON_TABLE, Annotator, Cds, annotate_haplotype, parse_gff
 
 GFF = """##gff-version 3
 chr\tx\tgene\t1\t12\t.\t+\t.\tID=g1
@@ -224,3 +224,80 @@ def test_annotate_table_frequency_threshold_is_inclusive():
     a = Annotator(parse_gff(GFF)[:1], MINI_REF)
     v = read_ivar_variants(_tsv((7, "G", "T", 0.02, 100), (9, "T", "C", 0.0199, 100)))
     assert list(annotate_table(v, a)["position"]) == [7]
+
+
+# ---------- linked variants annotated as one haplotype ----------
+
+def _plus(codons: str):
+    return Annotator([Cds("c", "G", "", "+", ((1, len(codons)),))], codons)
+
+
+def test_joint_effect_differs_from_single_effects_and_is_flagged_emergent():
+    a = _plus("AAA")                                   # K
+    (r,) = annotate_haplotype(a, [(1, "A", "G"), (2, "A", "T")])   # GAA=E alone, ATA=I alone, GTA=V together
+    assert (r["alt_codon"], r["aa_change"], r["effect"]) == ("GTA", "K1V", "missense")
+    assert r["single_effects"] == "K1E; K1I" and r["emergent"] and r["positions"] == "1,2"
+
+
+def test_joint_effect_not_emergent_when_it_equals_one_single_effect():
+    a = _plus("CAA")                                   # Q; pos1 C>G -> GAA (E); pos3 A>G -> CAG (Q, synonymous)
+    (r,) = annotate_haplotype(a, [(1, "C", "G"), (3, "A", "G")])
+    assert r["aa_change"] == "Q1E" and r["single_effects"] == "Q1E; Q1Q" and not r["emergent"]
+
+
+def test_changes_in_different_codons_give_separate_rows_and_noncoding_rows():
+    a = Annotator([Cds("c", "G", "", "+", ((4, 9),))], "CCC" + "GATGGT")      # D G in positions 4-9
+    rows = annotate_haplotype(a, [(1, "C", "T"), (4, "G", "T"), (9, "T", "C")])
+    assert [(r["positions"], r["effect"]) for r in rows] == [("1", "noncoding"), ("4", "missense"), ("9", "synonymous")]
+
+
+def test_joint_minus_strand_codon():
+    c = Cds("m", "M", "", "-", ((1, 3),))
+    a = Annotator([c], "CAT")                          # reverse complement ATG (M)
+    (r,) = annotate_haplotype(a, [(1, "C", "A"), (3, "T", "C")])
+    # coding order is genomic 3,2,1 with complement: bases A,T,G. genomic 3 T>C -> coding A>G; genomic 1 C>A -> coding G>T
+    assert (r["ref_codon"], r["alt_codon"]) == ("ATG", "GTT") and r["aa_change"] == "M1V"
+
+
+def test_joint_input_checks():
+    a = _plus("AAA")
+    with pytest.raises(ValueError, match="same position"):
+        annotate_haplotype(a, [(1, "A", "G"), (1, "A", "T")])
+    with pytest.raises(ValueError, match="mismatch"):
+        annotate_haplotype(a, [(1, "C", "G"), (2, "A", "T")])
+    with pytest.raises(ValueError, match="single-base"):
+        annotate_haplotype(a, [(1, "A", "+GG"), (2, "A", "T")])
+
+
+def test_frameshift_shared_base_is_annotated_in_both_codons():
+    a = Annotator([Cds("c", "O", "", "+", ((1, 6), (6, 11)))], "ATGGCTTGGAC")
+    rows = annotate_haplotype(a, [(6, "T", "C")])
+    assert sorted(r["codon"] for r in rows) == [2, 3]
+
+
+def test_the_two_real_clusters_of_this_sample_reproduce_the_single_site_table():
+    ref = ["A"] * 29903
+    for pos, base in {**dict(zip(range(5741, 5744), "GAG")), **dict(zip(range(5744, 5747), "TAC")),
+                      **dict(zip(range(26041, 26044), "ACT")), **dict(zip(range(26044, 26047), "CAA"))}.items():
+        ref[pos - 1] = base
+    from pathlib import Path
+    ann = Annotator(parse_gff((Path(__file__).parent / "data" / "MN908947.3.gff3").read_text()), "".join(ref))
+    orf3a = annotate_haplotype(ann, [(26042, "C", "T"), (26044, "C", "G"), (26046, "A", "G")])
+    assert [(r["codon"], r["aa_change"]) for r in orf3a] == [(217, "T217I"), (218, "Q218E")]
+    assert orf3a[1]["single_effects"] == "Q218E; Q218Q" and not orf3a[1]["emergent"]
+    orf1ab = annotate_haplotype(ann, [(5743, "G", "C"), (5744, "T", "C")])
+    assert [(r["codon"], r["aa_change"]) for r in orf1ab] == [(1826, "E1826D"), (1827, "Y1827H")]
+
+
+def test_input_order_does_not_matter():
+    a = Annotator([Cds("c", "G", "", "+", ((4, 9),))], "CCC" + "AAAGGT")
+    fwd = annotate_haplotype(a, [(1, "C", "T"), (4, "A", "G"), (5, "A", "T"), (9, "T", "C")])
+    rev = annotate_haplotype(a, [(9, "T", "C"), (5, "A", "T"), (4, "A", "G"), (1, "C", "T")])
+    assert fwd == rev
+    assert [r["positions"] for r in rev] == ["1", "4,5", "9"] and rev[1]["single_effects"] == "K1E; K1I"
+
+
+def test_rows_are_ordered_by_genomic_position_even_on_the_minus_strand():
+    a = Annotator([Cds("m", "M", "", "-", ((1, 6),))], "CATCAT")      # codon 1 = genomic 6..4, codon 2 = genomic 3..1
+    rows = annotate_haplotype(a, [(6, "T", "C"), (1, "C", "G")])
+    assert [(r["positions"], r["codon"]) for r in rows] == [("1", 2), ("6", 1)]
