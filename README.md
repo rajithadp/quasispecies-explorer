@@ -4,6 +4,10 @@ A pipeline and interactive dashboard for quantifying and visualising intra-host 
 
 It goes beyond a consensus sequence: it maps reads, calls low-frequency variants, reconstructs linked haplotypes with CliqueSNV, and reports diversity metrics and a variation graph, with the **frequency of every haplotype kept all the way through**.
 
+## 📸 Screenshots
+![Site-level metrics](images/site_level.png)
+![Frequency spectrum](images/frequency_spectrum.png)
+
 ## What changed in v2, and why
 
 | Before | Now |
