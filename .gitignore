@@ -49,3 +49,6 @@ graph_*.txt
 graph_.gfa
 graph_.png
 graph_*.txt
+compare_meta.*
+fixed.tsv
+graph_*

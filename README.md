@@ -16,7 +16,7 @@ It goes beyond a consensus sequence: it maps reads, calls low-frequency variants
 | ARTIC SARS-CoV-2 primers always downloaded. | Trimming is optional: `--primers FILE`, or `--artic-v3` for SARS-CoV-2. |
 | CliqueSNV can fail and still exit normally (it prints a stack trace, writes a placeholder haplotype with frequency 1.0 and records `Runtime error` only in its JSON), so a failed run looked like a one-haplotype result. | The JSON is read; any error means the placeholder is **not used**, the reason is printed and stored in `run_info.json`, and CliqueSNV runs with `-log`. |
 | Only haplotype FASTA could be explored. | **Site-level mode**: upload the iVar variants table (`.tsv`) to see per-site minor-allele frequencies, the frequency spectrum and a π estimate when linked haplotypes are not available. |
-| No tests. | 195 tests. |
+| No tests. | 203 tests. |
 
 ## Pipeline
 
@@ -113,6 +113,14 @@ The reference is the backbone, cut at every variable position (frequency >= 2%, 
 Add `--gff MN908947.3.gff3` to label the graph with gene and amino-acid effect: each alternative allele gets an `an` tag (`gene:change:effect`, e.g. `ORF3a:T217I:missense`; a base read in two codon contexts, like the orf1ab frameshift join, shows both), and each linked path gets a `jn` tag with the amino-acid changes of its alternative alleles together (changes in one codon are combined). The plot prints gene and change under annotated alleles and the joint changes in the legend. The GFF3 must describe the same reference sequence; a different one is refused.
 
 What the graph does not say: node frequencies are per-site allele frequencies. A complete path through many bubbles has **no** frequency, because the combination of alleles across distant sites is not observed. Evidence paths cover only the sites of their group, and a group is written only when no other variable site lies between its first and last site. Only SNVs are represented; indels are counted and skipped. The existing haplotype-based graph (FASTA mode) is unchanged.
+
+### Which fixed differences do samples share?
+
+```bash
+python fixed_differences.py --variants samples/*.variants.tsv --ref MN908947.3.fasta --gff MN908947.3.gff3 --out fixed
+```
+
+Lists every fixed difference from the reference (alternative allele >= 50% at depth >= 100) with its gene and amino-acid change, the samples that carry it, the groups of samples with identical sets, and the number of changes that differ between each pair of samples. Use it to see whether samples belong to the same lineage before reading anything into differences in diversity. A sample that does not carry a change has no such variant in its iVar table; that is the reference allele, but it can also be a position the sample covered poorly.
 
 The command line summary also works without the dashboard:
 
