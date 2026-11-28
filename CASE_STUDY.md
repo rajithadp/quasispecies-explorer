@@ -1,6 +1,6 @@
 # Case study: one SARS-CoV-2 sample, and what the tool could and could not say
 
-Date: 2026-11-27. Sample: SRR12447392 (Illumina paired-end, SARS-CoV-2, Washington DC, collected 2020-03-24), reference MN908947.3. Seven more runs from the same public study were used for comparison (see below). Everything here was produced with the scripts in this repository.
+Date: 2026-11-28. Sample: SRR12447392 (Illumina paired-end, SARS-CoV-2, Washington DC, collected 2020-03-24), reference MN908947.3. Seven more runs from the same public study were used for comparison (see below). Everything here was produced with the scripts in this repository.
 
 ## Question
 
@@ -43,11 +43,14 @@ Annotated as one haplotype (`annotate_haplotype.py`): ORF3a T217I with Q218E, an
 
 G>T and C>A are the usual signature of oxidative damage during library preparation, although real mutations of these types exist, so the tool reports every number both ways and removes nothing. All 44 stop-gained minor variants in the eight samples are of this class. SRR12447411 looks ten times more diverse than the rest only because of it.
 
-**5. Annotation reproduces known lineage markers.** Six samples carry S D614G, orf1ab P4715L and ORF3a Q57H. SRR12447411 and SRR12447389 do not, so the eight samples are not one lineage; this is another reason not to read biology into the diversity differences.
+**5. Six samples share one lineage; two do not.** `fixed_differences.py` lists the fixed differences (alternative allele ≥ 50%) of the eight samples: 33 distinct changes. Five are carried by exactly six samples: 241 (noncoding), 3037 (orf1ab F924F, synonymous), 14408 (orf1ab P4715L), 23403 (S D614G) and 25563 (ORF3a Q57H). SRR12447389 and SRR12447411 carry none of them and differ from every other sample by 12–18 changes (from each other by 13). Within the six, the closest pair (SRR12447404, SRR12447508) differs by one change. Another 25 changes occur in one sample only and one (orf1ab T265I) in four. A sample is recorded as lacking a change when iVar lists no such variant, which can also mean the position was covered poorly. So the eight samples are not one lineage, and differences in diversity between them are not evidence of biology.
+
+**6. A variation graph from variant calls works on real data.** For SRR12447392 (`build_variant_graph.py`, no haplotype reconstruction): 26 variable positions (9 fixed differences, 17 minor alleles), 78 nodes, 104 edges, plus the `reference` and `consensus` paths and four read-supported paths. Each alternative allele carries its gene and amino-acid change, and each linked path its joint change. In the ORF3a window the path with all three alternative alleles (8 fragments, against 361 for the reference allele) reads T217I with Q218E; the 26046 A>G change is synonymous on its own and changes Q218E only through its codon neighbour. The orf1ab path (5743, 5744; 7 alternative fragments against 517 reference) reads E1826D with Y1827H. Node frequencies are per-site allele frequencies; a complete path through many bubbles has no frequency, because the combination of distant alleles is not observed.
 
 ## What was not done
 
-- No haplotypes from real reads; no variation graph from real data.
+- No haplotypes from real reads. The graph is built from variant calls and read pairs, so it shows only the groups of nearby sites that single read pairs span.
+- The graph was built for one sample only; the lineage comparison is the only step done across all eight.
 - The two clusters have not been checked against a sequence database, and the extra changes at 5765–5766 on two orf1ab alt fragments have not been investigated.
 - No error model; the artifact reading rests on the substitution spectrum alone. Variants near iVar's 1% calling threshold are partly noise.
 - One study, one platform, three weeks of human samples from two places: the set tests the tool and cannot show a biological pattern.
@@ -56,4 +59,4 @@ G>T and C>A are the usual signature of oxidative damage during library preparati
 
 ## What this suggests for the tool
 
-A variation graph built from variant calls and linkage evidence (instead of CliqueSNV haplotypes); annotation of linked variants as one haplotype; an explicit error model for low-frequency calls; and the same comparison on samples with informative metadata.
+An explicit error model for low-frequency calls (the artifact reading rests on the substitution spectrum alone); graphs for every sample and a way to compare them; and the same analysis on samples whose metadata can answer a biological question (a time series from one patient, or samples from different tissues or treatments), because this study's eight samples, two places and a few weeks cannot.
