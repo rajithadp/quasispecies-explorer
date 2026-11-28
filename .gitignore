@@ -34,3 +34,18 @@ sequence.gff3
 readcheck*.fasta
 readcheck*.tsv
 readcheck*.txt
+
+# variation graph outputs
+graph_.gfa
+graph_.png
+graph_*.txt
+
+# variation graph outputs
+graph_.gfa
+graph_.png
+graph_*.txt
+
+# variation graph outputs
+graph_.gfa
+graph_.png
+graph_*.txt
