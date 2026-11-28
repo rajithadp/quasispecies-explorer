@@ -4,10 +4,6 @@ A pipeline and interactive dashboard for quantifying and visualising intra-host 
 
 It goes beyond a consensus sequence: it maps reads, calls low-frequency variants, reconstructs linked haplotypes with CliqueSNV, and reports diversity metrics and a variation graph, with the **frequency of every haplotype kept all the way through**.
 
-## 📸 Screenshots
-![Site-level metrics](images/site_level.png)
-![Frequency spectrum](images/frequency_spectrum.png)
-
 ## What changed in v2, and why
 
 | Before | Now |
@@ -20,7 +16,7 @@ It goes beyond a consensus sequence: it maps reads, calls low-frequency variants
 | ARTIC SARS-CoV-2 primers always downloaded. | Trimming is optional: `--primers FILE`, or `--artic-v3` for SARS-CoV-2. |
 | CliqueSNV can fail and still exit normally (it prints a stack trace, writes a placeholder haplotype with frequency 1.0 and records `Runtime error` only in its JSON), so a failed run looked like a one-haplotype result. | The JSON is read; any error means the placeholder is **not used**, the reason is printed and stored in `run_info.json`, and CliqueSNV runs with `-log`. |
 | Only haplotype FASTA could be explored. | **Site-level mode**: upload the iVar variants table (`.tsv`) to see per-site minor-allele frequencies, the frequency spectrum and a π estimate when linked haplotypes are not available. |
-| No tests. | 158 tests. |
+| No tests. | 195 tests. |
 
 ## Pipeline
 
@@ -104,6 +100,19 @@ python read_check.py --alignment SRR12447392_work/trimmed.sam --variants SRR1244
 ```
 
 Linked minor variants can be real, or they can be reads from another source that map badly. Such reads usually carry extra mismatches elsewhere and more soft-clipping. For each group, reads that show the alternative allele at every site they cover (*alt*) are compared with reads showing the reference allele (*ref*) over the same sites: unexplained mismatches (outside the group sites and the fixed differences), soft-clipped bases, mapping quality, indels and strand. Flags are raised for at least one extra mismatch per read, a 25-point higher share of reads with 10+ soft-clipped bases, or 10 points lower mapping quality (heuristic thresholds). The alt reads are also written as FASTA (in the reference's orientation) for NCBI BLAST. A clean result does not rule out a PCR or library artifact, and with a handful of alt reads the comparison is descriptive.
+
+### A variation graph from variant calls (no haplotype reconstruction)
+
+```bash
+python build_variant_graph.py --variants X.variants.tsv --ref MN908947.3.fasta \
+    --alignment X_work/trimmed.sam --sites 26042,26044,26046 --sites 5743,5744 --out graph
+```
+
+The reference is the backbone, cut at every variable position (frequency >= 2%, depth >= 100). Each variable position is a bubble with one node per allele (the reference allele and each alternative), carrying its frequency and its role (major or minor; a bubble whose major allele is not the reference is a fixed difference). Paths: `reference`, `consensus` (major allele everywhere) and, from the reads, one `linked_*` path per allele pattern of a group of nearby sites, tagged with its fragment count (`fc`). Minor G>T / C>A alleles are tagged `ox` (artifact-prone, see above). Output is GFA 1.0 for other graph tools. Add `--plot 26030-26060` to also draw that genome window to `<out>.png` (reference alleles on the middle line, marker area proportional to allele frequency, linked paths coloured with their fragment counts, minor G>T / C>A alleles ringed). `--auto` finds groups of nearby sites itself.
+
+Add `--gff MN908947.3.gff3` to label the graph with gene and amino-acid effect: each alternative allele gets an `an` tag (`gene:change:effect`, e.g. `ORF3a:T217I:missense`; a base read in two codon contexts, like the orf1ab frameshift join, shows both), and each linked path gets a `jn` tag with the amino-acid changes of its alternative alleles together (changes in one codon are combined). The plot prints gene and change under annotated alleles and the joint changes in the legend. The GFF3 must describe the same reference sequence; a different one is refused.
+
+What the graph does not say: node frequencies are per-site allele frequencies. A complete path through many bubbles has **no** frequency, because the combination of alleles across distant sites is not observed. Evidence paths cover only the sites of their group, and a group is written only when no other variable site lies between its first and last site. Only SNVs are represented; indels are counted and skipped. The existing haplotype-based graph (FASTA mode) is unchanged.
 
 The command line summary also works without the dashboard:
 
